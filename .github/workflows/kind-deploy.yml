@@ -1,0 +1,111 @@
+name: Deploy with Kind
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  kind-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        
+    - name: Cache Maven dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+        
+    - name: Build with Maven
+      run: ./mvnw clean package -DskipTests
+      
+    - name: Set up Kind
+      uses: helm/kind-action@v1.8.0
+      with:
+        cluster_name: demo-cluster
+        kubectl_version: v1.28.0
+        
+    - name: Build Docker image
+      run: |
+        docker build -t demo-app:${{ github.sha }} .
+        docker tag demo-app:${{ github.sha }} demo-app:latest
+        
+    - name: Load image into Kind
+      run: |
+        kind load docker-image demo-app:latest --name demo-cluster
+        
+    - name: Deploy to Kubernetes
+      run: |
+        # Update image tag in deployment
+        sed -i 's/demo-app:1.0.0/demo-app:latest/g' k8s/deployment.yaml
+        
+        # Apply manifests
+        kubectl apply -f k8s/
+        
+        # Wait for deployment to be ready
+        kubectl wait --for=condition=available --timeout=300s deployment/demo-app -n demo-app
+        
+    - name: Test deployment
+      run: |
+        # Port forward to test the application
+        kubectl port-forward service/demo-app-service 8080:80 -n demo-app &
+        PF_PID=$!
+        sleep 15
+        
+        # Test endpoints
+        curl -f http://localhost:8080/ || exit 1
+        curl -f http://localhost:8080/health || exit 1
+        curl -f http://localhost:8080/actuator/health || exit 1
+        
+        echo "All endpoints are working!"
+        
+        # Stop port forward
+        kill $PF_PID || true
+        
+    - name: Show deployment status
+      run: |
+        kubectl get all -n demo-app
+        kubectl logs deployment/demo-app -n demo-app --tail=50
+        
+    - name: Run integration tests
+      run: |
+        # Create test pod to run internal cluster tests
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          name: test-pod
+          namespace: demo-app
+        spec:
+          containers:
+          - name: test
+            image: curlimages/curl:latest
+            command: ['sh', '-c', 'sleep 30']
+          restartPolicy: Never
+        EOF
+        
+        kubectl wait --for=condition=ready pod/test-pod -n demo-app --timeout=60s
+        
+        # Test internal service communication
+        kubectl exec test-pod -n demo-app -- curl -f http://demo-app-service/
+        kubectl exec test-pod -n demo-app -- curl -f http://demo-app-service/health
+        kubectl exec test-pod -n demo-app -- curl -f http://demo-app-service/actuator/health
+        
+        echo "Internal cluster communication working!"
+        
+    - name: Cleanup
+      if: always()
+      run: |
+        kubectl delete namespace demo-app --ignore-not-found=true
+        kind delete cluster --name demo-cluster
