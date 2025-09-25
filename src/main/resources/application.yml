@@ -5,7 +5,37 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,vault
   endpoint:
     health:
       show-details: always
+
+spring:
+  application:
+    name: demo-app
+  cloud:
+    vault:
+      host: ${VAULT_HOST:vault}
+      port: ${VAULT_PORT:8200}
+      scheme: ${VAULT_SCHEME:https}
+      authentication: KUBERNETES
+      kubernetes:
+        role: demo-app
+        kubernetes-path: auth/kubernetes
+        service-account-token-file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      ssl:
+        trust-store-type: PEM
+        trust-store: classpath:vault.crt
+      kv:
+        enabled: true
+        backend: secret
+        default-context: demo-app
+
+# Sample secrets from Vault will be injected here
+demo:
+  message: ${vault.message:Default message}
+  database:
+    password: ${vault.db.password:default-password}
+    username: ${vault.db.username:default-user}
+  api:
+    key: ${vault.api.key:default-api-key}

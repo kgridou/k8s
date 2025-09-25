@@ -17,13 +17,15 @@ spec:
     spec:
       containers:
       - name: demo-app
-        image: demo-app:1.0.0
+        image: demo-app:1.0.1
         imagePullPolicy: IfNotPresent  # Important for local images
         ports:
         - containerPort: 8080
         env:
-        - name: SPRING_PROFILES_ACTIVE
-          value: "kubernetes"
+        - name: VAULT_HOST
+          value: "172.17.0.1"  # Docker bridge IP to reach host
+        - name: VAULT_PORT
+          value: "8200"
         livenessProbe:
           httpGet:
             path: /actuator/health
