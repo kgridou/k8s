@@ -36,6 +36,7 @@ init_response=$(vault operator init -key-shares=5 -key-threshold=3 -format=json)
 # Extract unseal keys and root token
 echo "$init_response" | jq -r '.unseal_keys_b64[]' > /vault/keys/unseal_keys.txt
 echo "$init_response" | jq -r '.root_token' > /vault/keys/root_token.txt
+echo "$init_response" | jq -r '.root_token' > /vault/keys/vault_root_token.txt
 
 echo "Vault initialized successfully!"
 echo "Unseal keys and root token saved to /vault/keys/"
