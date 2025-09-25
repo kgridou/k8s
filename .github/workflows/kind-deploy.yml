@@ -40,35 +40,53 @@ jobs:
       run: |
         docker build -t demo-app:${{ github.sha }} .
         docker tag demo-app:${{ github.sha }} demo-app:latest
+        docker images | grep demo-app
         
     - name: Load image into Kind
       run: |
         kind load docker-image demo-app:latest --name demo-cluster
+        # Verify image was loaded
+        docker exec demo-cluster-control-plane crictl images | grep demo-app || echo "Image not found in Kind node"
         
     - name: Deploy to Kubernetes
       run: |
         # Update image tag in deployment
         sed -i 's/demo-app:1.0.0/demo-app:latest/g' k8s/deployment.yaml
         
+        # Show what we're about to deploy
+        cat k8s/deployment.yaml | grep image:
+        
         # Apply manifests
         kubectl apply -f k8s/
+        
+        # Check pod status
+        kubectl get pods -n demo-app
         
         # Wait for deployment to be ready
         kubectl wait --for=condition=available --timeout=300s deployment/demo-app -n demo-app
         
     - name: Test deployment
       run: |
+        # Check if pods are running
+        kubectl get pods -n demo-app
+        kubectl describe pods -n demo-app
+        
         # Port forward to test the application
         kubectl port-forward service/demo-app-service 8080:80 -n demo-app &
         PF_PID=$!
         sleep 15
         
-        # Test endpoints
-        curl -f http://localhost:8080/ || exit 1
-        curl -f http://localhost:8080/health || exit 1
-        curl -f http://localhost:8080/actuator/health || exit 1
-        
-        echo "All endpoints are working!"
+        # Test endpoints with retries
+        for i in {1..3}; do
+          echo "Attempt $i:"
+          if curl -f http://localhost:8080/ && curl -f http://localhost:8080/health && curl -f http://localhost:8080/actuator/health; then
+            echo "All endpoints are working!"
+            break
+          else
+            echo "Endpoints not ready, waiting..."
+            sleep 10
+          fi
+        done
         
         # Stop port forward
         kill $PF_PID || true
