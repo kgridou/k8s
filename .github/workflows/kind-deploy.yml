@@ -56,14 +56,30 @@ jobs:
         # Show what we're about to deploy
         cat k8s/deployment.yaml | grep image:
         
-        # Apply manifests
-        kubectl apply -f k8s/
+        # Apply namespace first
+        kubectl apply -f k8s/namespace.yaml
+        
+        # Apply other manifests
+        kubectl apply -f k8s/deployment.yaml
+        kubectl apply -f k8s/service.yaml
+        kubectl apply -f k8s/ingress.yaml || echo "Ingress not applied (may not have ingress controller)"
+        
+        # Check resources
+        kubectl get all -n demo-app
+        kubectl get events -n demo-app --sort-by='.lastTimestamp'
         
         # Check pod status
         kubectl get pods -n demo-app
+        kubectl describe pods -n demo-app || echo "No pods found yet"
         
         # Wait for deployment to be ready
-        kubectl wait --for=condition=available --timeout=300s deployment/demo-app -n demo-app
+        kubectl wait --for=condition=available --timeout=300s deployment/demo-app -n demo-app || {
+          echo "Deployment failed to become ready, showing debug info:"
+          kubectl get pods -n demo-app
+          kubectl describe pods -n demo-app
+          kubectl logs deployment/demo-app -n demo-app --tail=50 || echo "No logs available"
+          exit 1
+        }
         
     - name: Test deployment
       run: |
