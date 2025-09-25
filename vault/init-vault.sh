@@ -11,19 +11,7 @@ initialized=$(echo "$vault_status" | grep -o '"initialized":[^,}]*' | cut -d':' 
 if [ "$initialized" = "true" ]; then
     echo "Vault is already initialized"
     
-    # Check if unseal keys exist
-    if [ -f "/vault/keys/unseal_keys.txt" ]; then
-        echo "Unsealing Vault with existing keys..."
-        # Read and use existing unseal keys
-        while IFS= read -r key; do
-            if [ ! -z "$key" ] && [ "$key" != "root_token:"* ]; then
-                vault operator unseal "$key" || true
-            fi
-        done < /vault/keys/unseal_keys.txt
-    else
-        echo "WARNING: Vault is initialized but unseal keys not found!"
-        echo "You will need to unseal Vault manually."
-    fi
+    echo "Vault is already initialized and unsealed"
     
     exit 0
 fi
@@ -33,13 +21,11 @@ echo "Initializing Vault..."
 # Initialize Vault
 init_response=$(vault operator init -key-shares=5 -key-threshold=3 -format=json)
 
-# Extract unseal keys and root token
-echo "$init_response" | jq -r '.unseal_keys_b64[]' > /vault/keys/unseal_keys.txt
-echo "$init_response" | jq -r '.root_token' > /vault/keys/root_token.txt
+# Extract and save root token
 echo "$init_response" | jq -r '.root_token' > /vault/keys/vault_root_token.txt
 
 echo "Vault initialized successfully!"
-echo "Unseal keys and root token saved to /vault/keys/"
+echo "Root token saved to /vault/keys/vault_root_token.txt"
 
 # Unseal Vault
 echo "Unsealing Vault..."
@@ -104,6 +90,5 @@ echo "Root token: $root_token"
 echo "Unseal keys and root token are saved in the vault-keys volume"
 echo ""
 echo "IMPORTANT: Save these credentials securely!"
-echo "Root token is in: /vault/keys/root_token.txt"
-echo "Unseal keys are in: /vault/keys/unseal_keys.txt"
+echo "Root token is in: /vault/keys/vault_root_token.txt"
 echo "==================================="
