@@ -180,24 +180,33 @@ kubectl delete namespace demo-app
 
 ## 🧪 CI/CD Pipelines
 
-This project includes GitHub Actions workflows for automated testing and deployment:
+This project includes GitHub Actions workflows for automated testing and deployment with enhanced debugging and error handling:
 
 ### Minikube Pipeline (`.github/workflows/minikube-deploy.yml`)
-- Builds application with Maven
-- Sets up minikube cluster
-- Builds and deploys Docker image
-- Tests all endpoints
+- Builds application with Maven and Java 17 (Eclipse Temurin)
+- Sets up minikube cluster (v1.32.0 with Kubernetes v1.28.0)
+- Builds Docker image using minikube's Docker daemon
+- Deploys to Kubernetes with proper manifest ordering
+- Tests all endpoints with retry logic
+- Provides detailed debugging output on failures
 - Cleans up resources
 
 ### Kind Pipeline (`.github/workflows/kind-deploy.yml`)
-- Builds application with Maven
-- Creates Kind cluster
-- Loads Docker image into cluster
-- Deploys and tests application
-- Tests internal cluster communication
+- Builds application with Maven and Java 17 (Eclipse Temurin)
+- Creates Kind cluster with kubectl v1.28.0
+- Builds and loads Docker image into Kind cluster
+- Deploys with enhanced error handling and debugging
+- Tests both external and internal cluster communication
+- Verifies image loading into cluster nodes
 - Cleans up resources
 
-Both pipelines run on push/PR to main/master branches.
+**Enhanced Features:**
+- **Robust error handling**: Detailed pod descriptions and logs on failures
+- **Retry logic**: Endpoint testing with 3 attempts and proper wait times
+- **Better debugging**: Event logs, resource status, and image verification
+- **Proper deployment order**: Namespace creation first, then individual manifests
+
+Both pipelines run on push/PR to main/master branches and include comprehensive logging for troubleshooting.
 
 ## 🏗️ Architecture
 
@@ -216,9 +225,10 @@ Both pipelines run on push/PR to main/master branches.
 
 ### Docker Architecture
 - **Multi-stage build** for optimized image size
-- **Build stage**: OpenJDK 17 JDK Alpine for compilation
-- **Runtime stage**: OpenJDK 17 JRE Alpine for execution
+- **Build stage**: Eclipse Temurin 17 JDK Alpine for compilation
+- **Runtime stage**: Eclipse Temurin 17 JRE Alpine for execution
 - **Minimal attack surface** with JRE-only runtime
+- **Modern base images**: Uses actively maintained Eclipse Temurin instead of deprecated OpenJDK images
 
 ## 🚨 Troubleshooting
 
@@ -227,16 +237,29 @@ Both pipelines run on push/PR to main/master branches.
 1. **ImagePullBackOff**
    - Ensure `imagePullPolicy: IfNotPresent` for local images
    - Verify image exists in cluster (minikube/kind)
+   - For minikube: Use `eval $(minikube docker-env)` before building
+   - For kind: Use `kind load docker-image <image-name> --name <cluster-name>`
 
 2. **CrashLoopBackOff**
    - Check application logs: `kubectl logs deployment/demo-app -n demo-app`
-   - Verify health check endpoints are responding
+   - Verify health check endpoints are responding at `/actuator/health`
+   - Check resource limits and startup time
 
-3. **Port conflicts**
+3. **Docker Build Issues**
+   - **Old OpenJDK images**: Use `eclipse-temurin:17-jdk-alpine` and `eclipse-temurin:17-jre-alpine`
+   - **Base image not found**: Ensure using actively maintained images
+
+4. **GitHub Actions Failures**
+   - **Deployment order**: Namespace must be created before other resources
+   - **Image loading**: Verify image is properly loaded into cluster
+   - **Port forwarding**: Allow sufficient time for application startup (15+ seconds)
+
+5. **Port conflicts**
    - Use different port: `./mvnw spring-boot:run -Dspring-boot.run.arguments="--server.port=8081"`
 
-4. **Resource limits**
+6. **Resource limits**
    - Adjust CPU/memory limits in `k8s/deployment.yaml`
+   - Default limits: CPU 500m, Memory 512Mi
 
 ### Health Checks
 ```bash

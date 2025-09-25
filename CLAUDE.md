@@ -38,7 +38,13 @@ docker build -t demo-app:1.0.0 .
 
 ### Kubernetes Commands
 ```bash
-# Deploy all manifests
+# Deploy manifests (recommended order for reliability)
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+kubectl apply -f k8s/ingress.yaml
+
+# Or deploy all at once (may have race conditions)
 kubectl apply -f k8s/
 
 # Check deployment status
@@ -46,6 +52,10 @@ kubectl get all -n demo-app
 
 # View application logs
 kubectl logs -f deployment/demo-app -n demo-app
+
+# Debug failed deployments
+kubectl get events -n demo-app --sort-by='.lastTimestamp'
+kubectl describe pods -n demo-app
 
 # Access application via port forwarding
 kubectl port-forward service/demo-app-service 8080:80 -n demo-app
@@ -76,7 +86,8 @@ kubectl set image deployment/demo-app demo-app=demo-app:1.0.1 -n demo-app
 - **Root directory**: Contains the comprehensive Spring Boot + K8s guide (`spring_boot_k8s_guide.md`)
 - **Standard Maven layout**: Following `src/main/java` and `src/main/resources` structure
 - **Kubernetes manifests**: Located in `k8s/` directory with separate files for namespace, deployment, service, and optional ingress
-- **Multi-stage Dockerfile**: Optimized for production with separate build and runtime stages
+- **Multi-stage Dockerfile**: Optimized for production with Eclipse Temurin base images
+- **GitHub Actions workflows**: Located in `.github/workflows/` for CI/CD with minikube and kind
 
 ### Key Components
 - **Spring Boot 3.2.0** with Java 17
@@ -104,4 +115,30 @@ The guide supports three local Kubernetes environments:
 - Spring Boot Actuator endpoints are exposed at `/actuator/health`
 - Default application port is 8080
 - Resource requests/limits are configured for development workloads
-- Supports both single-stage and multi-stage Dockerfiles
+- **Docker base images**: Use Eclipse Temurin instead of deprecated OpenJDK images
+- **GitHub Actions**: Enhanced with retry logic, debugging, and proper deployment ordering
+
+## Troubleshooting
+
+### Common Issues and Solutions
+
+**Docker Build Failures:**
+- Error: `openjdk:17-jre-alpine: not found` → Use `eclipse-temurin:17-jre-alpine`
+- Images should use Eclipse Temurin for both build and runtime stages
+
+**Kubernetes Deployment Issues:**
+- Apply namespace first: `kubectl apply -f k8s/namespace.yaml`
+- Check events: `kubectl get events -n demo-app --sort-by='.lastTimestamp'`
+- Debug pods: `kubectl describe pods -n demo-app`
+- View logs: `kubectl logs deployment/demo-app -n demo-app --tail=50`
+
+**GitHub Actions Failures:**
+- Deployment step failing → Usually namespace not created first
+- Image not found → Verify image loading into cluster (minikube/kind)
+- Port forwarding timeout → Allow 15+ seconds for app startup
+- Check workflow logs for detailed debugging output
+
+**Local Development:**
+- Port conflicts → Use different ports with `--server.port=8081`
+- minikube images → Use `eval $(minikube docker-env)` before building
+- kind images → Use `kind load docker-image <image> --name <cluster>`

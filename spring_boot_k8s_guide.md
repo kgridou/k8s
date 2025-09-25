@@ -129,7 +129,8 @@ management:
 
 Create `Dockerfile` in project root:
 ```dockerfile
-FROM openjdk:17-jdk-alpine
+# Note: Single-stage build (not recommended for production)
+FROM eclipse-temurin:17-jdk-alpine
 
 # Set working directory
 WORKDIR /app
@@ -155,10 +156,10 @@ EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "target/demo-app-1.0.0.jar"]
 ```
 
-### Alternative multi-stage Dockerfile (recommended):
+### Multi-stage Dockerfile (recommended):
 ```dockerfile
 # Build stage
-FROM openjdk:17-jdk-alpine AS build
+FROM eclipse-temurin:17-jdk-alpine AS build
 WORKDIR /app
 COPY mvnw .
 COPY .mvn .mvn
@@ -168,12 +169,14 @@ COPY src src
 RUN ./mvnw clean package -DskipTests
 
 # Runtime stage
-FROM openjdk:17-jre-alpine
+FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 COPY --from=build /app/target/demo-app-1.0.0.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
 ```
+
+**Important:** Use Eclipse Temurin base images instead of the deprecated `openjdk` images. The old `openjdk:17-jre-alpine` image is no longer available and will cause build failures.
 
 ## Step 3: Build and Test Docker Image
 
@@ -425,16 +428,42 @@ kubectl scale deployment demo-app --replicas=3 -n demo-app
 
 ### Common Issues:
 
-1. **ImagePullBackOff**: Ensure `imagePullPolicy: IfNotPresent` and image exists locally
-2. **CrashLoopBackOff**: Check logs with `kubectl logs`
-3. **Port conflicts**: Ensure ports aren't already in use
-4. **Resource limits**: Adjust memory/CPU limits if pods are killed
+1. **Docker Build Failures**: 
+   - Error: `openjdk:17-jre-alpine: not found` → Use `eclipse-temurin:17-jre-alpine`
+   - Always use Eclipse Temurin images instead of deprecated OpenJDK images
+
+2. **ImagePullBackOff**: 
+   - Ensure `imagePullPolicy: IfNotPresent` and image exists locally
+   - For minikube: Use `eval $(minikube docker-env)` before building
+   - For kind: Use `kind load docker-image <image-name> --name <cluster-name>`
+
+3. **CrashLoopBackOff**: 
+   - Check logs with `kubectl logs deployment/demo-app -n demo-app`
+   - Verify health endpoints are responding at `/actuator/health`
+
+4. **Port conflicts**: Ensure ports aren't already in use
+
+5. **Resource limits**: Adjust memory/CPU limits if pods are killed
+
+6. **Deployment Order Issues**:
+   - Apply namespace first: `kubectl apply -f k8s/namespace.yaml`
+   - Then apply other manifests individually to avoid race conditions
 
 ### Health Checks:
 ```bash
 # Check if Spring Boot actuator is working
 kubectl port-forward service/demo-app-service 8080:80 -n demo-app
 curl http://localhost:8080/actuator/health
+
+# Debug deployment issues
+kubectl get events -n demo-app --sort-by='.lastTimestamp'
+kubectl describe pods -n demo-app
+kubectl logs deployment/demo-app -n demo-app --tail=50
 ```
 
-This setup gives you a complete Spring Boot application running on local Kubernetes with proper health checks, resource management, and development workflow.
+### Additional Resources:
+- **GitHub Actions**: This project includes automated CI/CD pipelines for minikube and kind deployments
+- **Enhanced Debugging**: Workflows include comprehensive error handling and debugging output
+- **Modern Docker Images**: Updated to use Eclipse Temurin for reliable builds
+
+This setup gives you a complete Spring Boot application running on local Kubernetes with proper health checks, resource management, automated CI/CD, and robust troubleshooting capabilities.
